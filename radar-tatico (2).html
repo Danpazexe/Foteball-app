@@ -1,0 +1,944 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Radar Tático — motor de simulação</title>
+<style>
+  :root{
+    --ink:#0b1220; --ink2:#121c2e; --line:#1e2c44;
+    --turf:#0f2a24; --turf2:#123128; --chalk:#5f8c7e;
+    --home:#4dd4ff; --away:#ff6b57; --ball:#ffe066;
+    --txt:#c8d6e8; --dim:#63779a; --hot:#8affc1; --red:#ff4d4d;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ink);color:var(--txt);font-family:var(--mono);font-size:12px}
+  #wrap{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;padding:14px;max-width:1440px;margin:0 auto}
+  @media(max-width:900px){#wrap{grid-template-columns:1fr}}
+  canvas{width:100%;display:block;border:1px solid var(--line);border-radius:6px;background:var(--turf)}
+  .panel{background:var(--ink2);border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px}
+  h2{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);margin:0 0 8px;font-weight:600}
+  .score{display:flex;justify-content:space-between;align-items:baseline;font-size:22px;letter-spacing:.05em}
+  .clock{color:var(--dim);font-size:13px}
+  .bar{height:6px;background:var(--away);border-radius:3px;overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;background:var(--home)}
+  .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dotted #1b2740}
+  .row b{color:#fff;font-weight:500}
+  .u{height:4px;background:#1b2740;border-radius:2px;margin-top:3px}
+  .u i{display:block;height:100%;background:var(--hot);border-radius:2px}
+  .u.sel i{background:var(--ball)}
+  #log{height:150px;overflow:auto;line-height:1.65}
+  #log div{border-bottom:1px dotted #1b2740;padding:1px 0}
+  #log span.t{color:var(--dim)}
+  button,input,select{font:inherit;background:#182541;color:var(--txt);border:1px solid var(--line);border-radius:4px;padding:5px 9px}
+  button{cursor:pointer}button:hover{border-color:var(--home)}
+  label{display:flex;gap:6px;align-items:center;color:var(--dim);cursor:pointer}
+  .ctl{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .card{display:inline-block;width:7px;height:10px;border-radius:1px;vertical-align:-1px;margin-right:3px}
+</style>
+
+<div id="wrap">
+  <div>
+    <canvas id="cv"></canvas>
+    <div class="panel" style="margin-top:10px">
+      <div class="ctl">
+        <button id="pp">Pausar</button>
+        <button id="rs">Reiniciar</button>
+        <span style="color:var(--dim)">seed</span><input id="seed" value="7" size="5">
+        <span style="color:var(--dim)">vel</span>
+        <select id="sp"><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>
+        <label><input type="checkbox" id="dbg" checked> camadas táticas</label>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <div class="score"><span style="color:var(--home)">MANDANTE <b id="sh">0</b></span>
+      <span class="clock" id="ck">00:00</span>
+      <span style="color:var(--away)"><b id="sa">0</b> VISITANTE</span></div>
+      <div class="bar"><i id="poss" style="width:50%"></i></div>
+      <div style="display:flex;justify-content:space-between;color:var(--dim);margin-top:3px">
+        <span id="ph">posse</span><span id="pa">posse</span></div>
+      <div class="row" style="margin-top:6px"><span>finalizações</span>
+        <b><span id="fh" style="color:var(--home)">0</span> · <span id="fa" style="color:var(--away)">0</span></b></div>
+      <div class="row"><span>passes certos</span>
+        <b><span id="ach" style="color:var(--home)">—</span> · <span id="aca" style="color:var(--away)">—</span></b></div>
+      <div class="row"><span>faltas</span>
+        <b><span id="flh" style="color:var(--home)">0</span> · <span id="fla" style="color:var(--away)">0</span></b></div>
+      <div class="row"><span>impedimentos</span>
+        <b><span id="oih" style="color:var(--home)">0</span> · <span id="oia" style="color:var(--away)">0</span></b></div>
+    </div>
+
+    <div class="panel">
+      <h2>Súmula</h2>
+      <div id="disc" style="color:var(--dim)">sem ocorrências</div>
+    </div>
+
+    <div class="panel">
+      <h2>Cérebro — jogador com a bola</h2>
+      <div id="brain" style="color:var(--dim)">bola solta</div>
+    </div>
+
+    <div class="panel">
+      <h2>Narração do lance</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   MOTOR DE SIMULAÇÃO DE FUTEBOL — 5 camadas
+   1. FÍSICA      bola e corpos em metros/segundo reais
+   2. FORMA       posição-base dinâmica (a equipe desliza com a bola)
+   3. CÉREBRO     IA utilitária: avalia opções, escolhe, erra
+   4. REGRAS      saídas, reinícios, gol
+   5. ARBITRAGEM  impedimento, faltas, cartões, pênalti, VAR
+   Nenhuma jogada é escrita. Tudo emerge.
+
+   Princípio da camada 5: o ÁRBITRO NÃO ENXERGA A VERDADE.
+   A simulação conhece a posição exata de tudo, mas o árbitro decide
+   sobre uma leitura com ruído. O VAR consulta a verdade. É daí que
+   nascem os erros de marcação e as revisões — não de sorteio.
+═══════════════════════════════════════════════════════════════ */
+
+/* ── util ─────────────────────────────────────────────────── */
+const cl=(v,a,b)=>v<a?a:v>b?b:v, hyp=Math.hypot;
+const D=(a,b)=>hyp(a.x-b.x,a.y-b.y);
+const V=(x,y)=>({x,y});
+const nrm=a=>{const l=hyp(a.x,a.y)||1;return V(a.x/l,a.y/l)};
+function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function segD(p,a,b){const vx=b.x-a.x,vy=b.y-a.y,L=vx*vx+vy*vy;
+  let t=L?((p.x-a.x)*vx+(p.y-a.y)*vy)/L:0;t=cl(t,0,1);
+  return{d:hyp(p.x-(a.x+t*vx),p.y-(a.y+t*vy)),t}}
+
+/* ── dimensões oficiais (metros) ──────────────────────────── */
+const F={L:105,W:68,GW:7.32,PD:16.5,PW:40.32,GD:5.5,GA:18.32,PEN:11,WALL:9.15};
+
+/* duração real de cada paralisação — sem isso a bola nunca sai de jogo e
+   a densidade de finalizações fica absurda (a bola rola 55 min em 90) */
+const DUR={lateral:6,escanteio:13,meta:11,falta:15,penalti:26,saida:6};
+let rnd, ball, teams, clock, setPiece, running=true, log=[], possCount=[0,0], stats, ref, varS, pendOff;
+
+/* ── física da bola: dv/dt = −k·v − c ─────────────────────── */
+const KB=.34, CB=.42;
+function ballDist(v0,t){
+  const A=v0+CB/KB, ts=Math.max(0,Math.log(A*KB/CB)/KB);
+  const tt=Math.min(t,ts);
+  return (A/KB)*(1-Math.exp(-KB*tt))-(CB/KB)*tt;
+}
+function travelTime(d,v0){
+  let lo=0,hi=5; if(ballDist(v0,hi)<d) return hi;
+  for(let i=0;i<16;i++){const m=(lo+hi)/2; ballDist(v0,m)<d?lo=m:hi=m}
+  return (lo+hi)/2;
+}
+const passSpeed=d=>cl(4.5+d*.78,7,24);
+const lead=(p,k)=>V(cl(p.pos.x+p.vel.x*k*.85,1,F.L-1),cl(p.pos.y+p.vel.y*k*.85,1,F.W-1));
+
+/* ── formação 4-3-3 normalizada (0 = gol próprio, 1 = gol adv) ── */
+const F433=[
+ {r:'GK',n:1, x:.035,y:.50},
+ {r:'LB',n:3, x:.215,y:.12},{r:'CB',n:5, x:.150,y:.36},
+ {r:'CB',n:4, x:.150,y:.64},{r:'RB',n:2, x:.215,y:.88},
+ {r:'DM',n:6, x:.330,y:.50},{r:'CM',n:8, x:.460,y:.30},
+ {r:'CM',n:10,x:.470,y:.70},{r:'LW',n:11,x:.700,y:.10},
+ {r:'ST',n:9, x:.790,y:.50},{r:'RW',n:7, x:.700,y:.90}];
+
+function mkPlayer(t,s,i){
+  const j=(a,b)=>a+rnd()*(b-a);
+  const zag=s.r=='CB'||s.r=='DM'||s.r=='LB'||s.r=='RB';
+  return{id:t.id*11+i,team:t,role:s.r,num:s.n,
+    base:V(s.x,s.y), base0:V(s.x,s.y),
+    pos:V(0,0),vel:V(0,0),tgt:V(0,0),
+    a:{pace: s.r=='GK'?.55:j(.72,1),
+       acc:  j(.7,1),
+       pass: j(.62,.96),
+       shot: s.r=='ST'||s.r[1]=='W'?j(.7,.98):j(.4,.8),
+       tack: zag?j(.7,.98):j(.45,.8),
+       vis:  j(.55,.98),
+       aggr: zag?j(.3,.85):j(.15,.6)},        // agressividade → faltas e cartões
+    stam:1, dt:rnd()*.25, act:'—', opts:[], cool:0, noChase:0,
+    yellow:0, sent:false, off:0, dive:0};
+}
+function mkTeam(id,dir,color,name){
+  const t={id,dir,color,name,phase:'def',score:0,players:[],since:0};
+  t.players=F433.map((s,i)=>mkPlayer(t,s,i));
+  t.on=t.players.slice();                      // ← em campo (cai com expulsão)
+  return t;
+}
+function reset(seed){
+  rnd=mulberry32(seed|0); clock=0; log=[]; possCount=[0,0]; varS=null; pendOff=null;
+  stats=[{att:0,ok:0,sh:0,foul:0,off:0,yc:0,rc:0,sv:0},{att:0,ok:0,sh:0,foul:0,off:0,yc:0,rc:0,sv:0}];
+  ref={noise:.55};                             // erro perceptivo do árbitro, em metros
+  teams=[mkTeam(0,+1,'--home','Mandante'),mkTeam(1,-1,'--away','Visitante')];
+  ball={pos:V(F.L/2,F.W/2),vel:V(0,0),owner:null,last:null,target:null,tExp:0,pen:false};
+  teams.forEach(t=>t.on.forEach(p=>{const h=home(p);p.pos={...h}}));
+  kickoff(teams[0]); say('Bola rolando.');
+}
+
+/* ═══ CAMADA 2 — FORMA DINÂMICA ═══════════════════════════ */
+function home(p){
+  const t=p.team,d=t.dir;
+  const bd=d>0? ball.pos.x/F.L : 1-ball.pos.x/F.L;
+  const by=ball.pos.y/F.W;
+  const atk=t.phase=='atk';
+  // BLOCO COM COMPRIMENTO FIXO. O deslocamento livre + clamp em .02 fazia a
+  // defesa DESABAR sobre a própria linha de gol quando a bola chegava perto,
+  // deixando a entrada da área completamente livre. Agora define-se a linha
+  // defensiva e o bloco inteiro pendura nela, mantendo 34–46 m de altura.
+  const span=atk?.40:.34;
+  const rear=atk? cl(bd-.22,.08,.42) : cl(bd-.16,.05,.55);
+  const dep=cl((p.base.x-.15)/.64,0,1);        // 0 = zagueiro, 1 = centroavante
+  const nx=cl(rear+dep*span,.02,.96);
+  const wide=atk?1.06:.66;
+  const side=atk?.08:.26;
+  const ny=cl(.5+(p.base.y-.5)*wide+(by-.5)*side,.04,.96);
+  if(p.role=='GK'){const gx=d>0?1.6+bd*7:F.L-1.6-bd*7;
+    return V(gx,cl(F.W/2+(by-.5)*7,F.W/2-5,F.W/2+5))}
+  return V(d>0?nx*F.L:(1-nx)*F.L, ny*F.W);
+}
+const oppGoal=t=>V(t.dir>0?F.L:0,F.W/2);
+const ownGoal=t=>V(t.dir>0?0:F.L,F.W/2);
+const foe=t=>teams[1-t.id];
+const boxLine=t=>t.dir>0?F.PD:F.L-F.PD;                 // linha da grande área DEFENDIDA por t
+const inBox=(pos,t)=>t.dir>0?pos.x<F.PD:pos.x>F.L-F.PD;
+
+/* redistribui a largura quando o time fica com menos jogadores */
+function reshape(t){
+  const out=t.on.filter(p=>p.role!='GK');
+  const band=[[],[],[]];
+  for(const p of out) band[p.base0.x<.28?0:p.base0.x<.55?1:2].push(p);
+  for(const b of band){
+    if(!b.length) continue;
+    b.sort((a,c)=>a.base0.y-c.base0.y);
+    b.forEach((p,i)=>p.base.y = b.length==1?.5 : .14+.72*(i/(b.length-1)));
+  }
+}
+
+/* linha de impedimento: penúltimo defensor, bola ou meio-campo */
+function offsideLine(t){
+  const xs=foe(t).on.map(p=>p.pos.x).sort((a,b)=>t.dir>0?b-a:a-b);
+  const second=xs.length>1?xs[1]:xs[0];
+  return t.dir>0? Math.max(F.L/2,Math.min(second,F.L),ball.pos.x>second?ball.pos.x:second)
+                : Math.min(F.L/2,Math.max(second,0),ball.pos.x<second?ball.pos.x:second);
+}
+const offMargin=(pos,t,line)=>(pos.x-line)*t.dir;        // >0 = impedido, em metros
+
+function press(p){let s=0;for(const o of foe(p.team).on){const d=D(p.pos,o.pos);if(d<6)s+=1-d/6}return Math.min(s,2)}
+function lane(a,b,team){let q=1;
+  for(const o of foe(team).on){const{d,t}=segD(o.pos,a,b);if(t>.02&&t<.99&&d<4.5)q=Math.min(q,d/4.5)}
+  return q}
+function space(pt,team){let m=14;for(const o of foe(team).on)m=Math.min(m,D(pt,o.pos));return Math.min(m,14)/14}
+
+function interceptRisk(from,to,v0,team){
+  let risk=0; const total=D(from,to); if(total<1) return 0;
+  for(const o of foe(team).on){
+    const{d,t}=segD(o.pos,from,to);
+    if(t<=.03||t>=1) continue;
+    const tb=travelTime(total*t,v0);
+    const to_=.24+Math.max(0,d-1.2)/(5.6+o.a.pace*2.8);
+    if(to_<tb) risk=Math.max(risk,cl(1-to_/Math.max(tb,.05),0,1));
+  }
+  return risk;
+}
+
+/* ═══ MODELO DE FINALIZAÇÃO ═══════════════════════════════
+   Varre a boca do gol procurando o ponto que o goleiro não
+   alcança a tempo e que nenhum zagueiro bloqueia.           */
+function shotAim(p,noisy){
+  const t=p.team, gx=t.dir>0?F.L:0;
+  const gk=foe(t).on.find(x=>x.role=='GK');
+  // O finalizador NÃO enxerga a posição exata do goleiro. Ele lê com erro e
+  // mira no que ACHA que é o canto aberto — às vezes chutando em cima do
+  // goleiro. Sem esse ruído o atacante virava um oráculo e convertia ~38%.
+  const e=noisy?(.55+(1-p.a.vis)*1.8):0;
+  const gkp=gk? V(gk.pos.x+(rnd()-.5)*2*e, gk.pos.y+(rnd()-.5)*2*e) : null;
+  let best=null;
+  for(let i=0;i<=10;i++){
+    const y=F.W/2-F.GW/2+.9+(F.GW-1.8)*(i/10);
+    const aim=V(gx,y), d=D(p.pos,aim); if(d<.6) continue;
+    const v=cl(22+p.a.shot*8,20,31);
+    const tb=travelTime(d,v);
+    let blk=1;
+    for(const o of foe(t).on){
+      if(o.role=='GK') continue;
+      const{d:dd,t:tt}=segD(o.pos,p.pos,aim);
+      if(tt>.05&&tt<.98&&dd<2.6) blk=Math.min(blk,dd/2.6);
+    }
+    let gkq=1;
+    if(gk){
+      const need=Math.max(0,D(gkp,aim)-2.05);
+      const tg=.17+need/5.2;
+      gkq=cl((tg-tb+.10)/.55,0,1);
+    }
+    const q=blk*gkq;
+    if(!best||q>best.q) best={aim,q,d,v};
+  }
+  return best;
+}
+
+/* ═══ CAMADA 3 — O CÉREBRO ═══════════════════════════════ */
+function decide(p){
+  const t=p.team,g=oppGoal(t),line=offsideLine(t),pr=press(p);
+  const dg=D(p.pos,g), opts=[];
+
+  if(dg<24){
+    const sh=shotAim(p,true);
+    if(sh){
+      const dq=1-cl((sh.d-6)/26,0,1);
+      let u=.02+.88*sh.q*(.42+.58*dq)+.26*dq*sh.q;
+      u*=(1-.35*pr); u*=(.55+.45*p.a.shot);
+      if(sh.d<11&&sh.q>.5) u+=.24;
+      opts.push({k:'finalizar',u,tp:sh.aim,v:sh.v,shot:true});
+    }
+  }
+  for(const m of t.on){
+    if(m===p||(m.role=='GK'&&dg<55)) continue;
+    let tp=lead(m,.35), d=D(p.pos,tp), v=passSpeed(d);
+    for(let k=0;k<2;k++){
+      const ft=cl(travelTime(d,v),.1,2.0);
+      tp=lead(m,ft); d=D(p.pos,tp); v=passSpeed(d);
+    }
+    if(d<2.5||d>48) continue;
+    // o passador tenta evitar o impedimento, mas julga com a própria
+    // percepção — por isso ainda arrisca passes na linha.
+    if(offMargin(tp,t,line) > (1-p.a.vis)*.55-.42) continue;
+    const sp=space(tp,t);
+    const rk=interceptRisk(p.pos,tp,v,t);
+    const gain=cl((D(p.pos,g)-D(tp,g))/30,-1,1);
+    const prog=((g.x-tp.x)*t.dir<(g.x-p.pos.x)*t.dir)?1:0;
+    const near=1-cl(D(p.pos,ownGoal(t))/45,0,1);
+    const u=.46+.26*sp+.34*gain+.10*prog-rk*(1.35+near*1.1)-.003*d+(pr>.8?.20*(1-rk):0);
+    opts.push({k:'passe→'+m.num,u,to:m,tp,v});
+  }
+  {
+    const ah=V(p.pos.x+t.dir*7,cl(p.pos.y+(rnd()-.5)*5,2,F.W-2));
+    opts.push({k:'conduzir',u:.28+.5*space(ah,t)-.55*pr+.15*(dg<45?1:0),to:ah});
+  }
+  if(D(p.pos,ownGoal(t))<30&&pr>1) opts.push({k:'afastar',u:.35+.5*pr});
+
+  for(const o of opts) o.u+=(rnd()-.5)*.62*(1-p.a.vis);
+  opts.sort((a,b)=>b.u-a.u);
+  p.opts=opts.slice(0,6);
+  return opts[0];
+}
+
+/* congela a posição de impedimento de todos no instante do toque */
+function stampOffside(t){
+  const line=offsideLine(t);
+  for(const m of t.on) m.off=offMargin(m.pos,t,line);
+  for(const m of foe(t).on) m.off=-99;
+}
+function clearOff(){ for(const t of teams) for(const p of t.players) p.off=-99; pendOff=null; }
+
+function execute(p,o){
+  const t=p.team;
+  p.act=o.k;
+  if(o.k=='conduzir'){p.tgt=o.to;return}
+  ball.owner=null; ball.last=t; ball.target=null; ball.pen=false; ball.shot=false; p.cool=.35;
+  stampOffside(t);
+
+  if(o.shot){
+    const sp=(1-p.a.shot)*(.55+.55*press(p));
+    const g2=()=>(rnd()+rnd()-1);
+    const aim=V(o.tp.x,o.tp.y+g2()*(1.5+sp*6+D(p.pos,o.tp)*.105));
+    shootBall(p,aim,o.v); ball.shot=true; stats[t.id].sh++;
+    say(`#${p.num} finaliza de ${Math.round(D(p.pos,oppGoal(t)))}m.`,t);
+    return;
+  }
+  if(o.k=='afastar'){
+    shootBall(p,V(p.pos.x+t.dir*38,rnd()<.5?4:F.W-4),22);
+    say(`#${p.num} afasta o perigo.`,t); return;
+  }
+  const err=(1-p.a.pass)*(.5+.5*press(p));
+  const g2=()=>(rnd()+rnd()-1);
+  const spread=err*(1.1+D(p.pos,o.tp)*.06);
+  const aim=V(cl(o.tp.x+g2()*spread,-2,F.L+2), cl(o.tp.y+g2()*spread,-2,F.W+2));
+  shootBall(p,aim,passSpeed(D(p.pos,aim)));
+  ball.target=o.to; ball.tExp=clock+3.5; p.noChase=1.1; stats[t.id].att++;
+}
+function shootBall(p,aim,sp){
+  const dir=nrm(V(aim.x-p.pos.x,aim.y-p.pos.y));
+  ball.pos=V(p.pos.x+dir.x*.8,p.pos.y+dir.y*.8);
+  ball.vel=V(dir.x*sp,dir.y*sp);
+}
+
+/* ═══ MOVIMENTAÇÃO SEM BOLA ═══════════════════════════════ */
+function offBall(p){
+  const t=p.team,d=t.dir,h=home(p);
+  if(p.role=='GK') return gkPos(p);
+
+  // durante uma bola parada adversária, recuar até a distância regulamentar
+  if(setPiece&&setPiece.team!==t&&setPiece.kind!='saida'){
+    let q={...h};
+    if(setPiece.kind=='penalti'){                       // fora da área e atrás da bola
+      const bx=boxLine(foe(t));
+      q.x=t.dir>0? Math.min(q.x,bx-2) : Math.max(q.x,bx+2);
+      if(D(q,setPiece.pos)<F.WALL){const v=nrm(V(q.x-setPiece.pos.x,q.y-setPiece.pos.y));
+        q=V(setPiece.pos.x+v.x*F.WALL,setPiece.pos.y+v.y*F.WALL)}
+    }else if(D(q,setPiece.pos)<F.WALL){
+      const v=nrm(V(q.x-setPiece.pos.x,q.y-setPiece.pos.y));
+      q=V(setPiece.pos.x+v.x*F.WALL,setPiece.pos.y+v.y*F.WALL);
+    }
+    return V(cl(q.x,1,F.L-1),cl(q.y,1,F.W-1));
+  }
+
+  const owner=ball.owner, mine=owner&&owner.team===t, loose=!owner;
+
+  if(loose){
+    if(ball.target===p) return intercept(p);
+    const rank=[...t.on].filter(x=>x.role!='GK'&&!(x.noChase>0)&&x!==ball.target)
+      .sort((a,b)=>D(a.pos,ball.pos)-D(b.pos,ball.pos));
+    const incoming=ball.target&&ball.target.team===t;
+    if(rank.indexOf(p)<(incoming?1:2)) return intercept(p);
+    return h;
+  }
+  if(!mine){
+    const rank=[...t.on].filter(x=>x.role!='GK')
+      .sort((a,b)=>D(a.pos,ball.pos)-D(b.pos,ball.pos));
+    const idx=rank.indexOf(p);
+    if(idx==0) return {...ball.pos};
+    if(idx==1) return V((ball.pos.x+h.x*2)/3,(ball.pos.y+h.y*2)/3);
+    // no próprio terço entra um terceiro homem: é o que impede o chute livre
+    if(idx==2&&D(ball.pos,ownGoal(t))<34) return V((ball.pos.x+h.x)/2,(ball.pos.y+h.y)/2);
+    let best=null,bd=13;
+    for(const o of foe(t).on){
+      if(o===owner||o.role=='GK')continue;
+      const dd=D(o.pos,h); if(dd<bd){bd=dd;best=o}
+    }
+    if(best){const g=ownGoal(t),v=nrm(V(g.x-best.pos.x,g.y-best.pos.y));
+      return V(cl(best.pos.x+v.x*1.5,1,F.L-1),cl(best.pos.y+v.y*1.5,1,F.W-1))}
+    return h;
+  }
+
+  const line=offsideLine(t), carrier=owner;
+  // atacante impulsivo arrisca a linha; é daqui que saem os impedimentos
+  const gamble=(.05+(1-p.a.vis)*.7)*(p.base0.x>.6?1:.25);
+  let best=h,bu=-1e9;
+  for(let i=0;i<11;i++){
+    const rad=i?6+rnd()*9:0, an=rnd()*Math.PI*2;
+    let c=V(cl(h.x+Math.cos(an)*rad,1.5,F.L-1.5),cl(h.y+Math.sin(an)*rad,1.5,F.W-1.5));
+    // O atacante FREIA a corrida. Antes ele mirava a linha e a inércia o
+    // levava metros além — 80 impedimentos por jogo. Agora a margem de
+    // segurança cresce com a velocidade dele, como um atacante de verdade.
+    const vf=Math.max(0,p.vel.x*d);
+    const lim=line+d*(gamble-vf*.20);
+    if(d>0) c.x=Math.min(c.x,lim); else c.x=Math.max(c.x,lim);
+    const ln=carrier===p?1:lane(carrier.pos,c,t);
+    const adv=cl((c.x-carrier.pos.x)*d/30,-1,1);
+    const u=.55*space(c,t)+.55*ln+.35*adv-.035*D(c,h)-.05*(D(c,carrier.pos)<7?4:0);
+    if(u>bu){bu=u;best=c}
+  }
+  return best;
+}
+function intercept(p){
+  const v0=hyp(ball.vel.x,ball.vel.y);
+  if(v0<.6) return {...ball.pos};
+  const dir=nrm(ball.vel), vmax=5.6+p.a.pace*2.8;
+  for(let s=1;s<=32;s++){
+    const tt=s*.08, dd=ballDist(v0,tt);
+    const pt=V(cl(ball.pos.x+dir.x*dd,0,F.L),cl(ball.pos.y+dir.y*dd,0,F.W));
+    if(D(p.pos,pt)<=Math.max(0,tt-.14)*vmax+1.2) return pt;
+  }
+  const dd=ballDist(v0,2.6);
+  return V(cl(ball.pos.x+dir.x*dd,0,F.L),cl(ball.pos.y+dir.y*dd,0,F.W));
+}
+function gkPos(p){
+  const g=ownGoal(p.team);
+  if(p.dive) return V(g.x+p.team.dir*.6, cl(F.W/2+p.dive*2.7,2,F.W-2));   // pênalti
+  const v=nrm(V(ball.pos.x-g.x,ball.pos.y-g.y));
+  const out=cl(D(ball.pos,g)*.20,1.2,13);
+  return V(g.x+v.x*out,cl(g.y+v.y*out,F.W/2-8,F.W/2+8));
+}
+
+/* ═══ CAMADA 5 — ARBITRAGEM ═══════════════════════════════ */
+
+/* resultado de uma disputa: ganha a bola, nada, ou falta */
+function challenge(o,c,dt){
+  const rel=hyp(o.vel.x-c.vel.x,o.vel.y-c.vel.y);
+  const cd=nrm(hyp(c.vel.x,c.vel.y)>.5?c.vel:V(c.team.dir,0));
+  const ap=nrm(V(c.pos.x-o.pos.x,c.pos.y-o.pos.y));
+  const behind=cl(ap.x*cd.x+ap.y*cd.y,0,1);            // 1 = chegando por trás
+  const clean=(.30+o.a.tack*.55)*(1-.25*behind)*(1-cl(rel/16,0,.45));
+  const r=rnd();
+  if(r<clean*dt*3.2) return{k:'win'};
+  const pf=(.14+(1-o.a.tack)*.45+o.a.aggr*.45)*(.55+behind)*(.6+rel/12);
+  if(r>1-pf*dt*4.8) return{k:'foul',rel,behind};
+  return null;
+}
+
+/* o atacante estava em condição de gol claro? (DOGSO → vermelho) */
+function dogso(c){
+  const t=c.team;
+  if(D(c.pos,oppGoal(t))>38) return false;
+  for(const o of foe(t).on) if(o.role!='GK'&&(o.pos.x-c.pos.x)*t.dir>1) return false;
+  return true;
+}
+
+function foul(o,c,info){
+  const t=o.team, at=foe(t);                            // at = quem sofreu
+  stats[t.id].foul++;
+  clearOff();
+  ball.owner=null; ball.vel=V(0,0); ball.target=null;
+
+  // ── o árbitro julga se foi dentro da área com percepção imprecisa ──
+  const bx=boxLine(t);
+  const margin=(bx-c.pos.x)*t.dir;                      // >0 = dentro da área, verdade
+  const seen=margin+(rnd()-.5)*2*ref.noise;             // o que o árbitro acha que viu
+  const gaveP=seen>0;
+
+  // ── severidade ──
+  let sev=0;
+  if(info.rel>7&&info.behind>.6) sev=1;
+  if(rnd()<o.a.aggr*.26) sev=Math.max(sev,1);
+  if(info.rel>10.5&&rnd()<.22+o.a.aggr*.28) sev=2;
+  const clear=dogso(c)&&!gaveP;                          // impedir gol claro fora da área
+  if(clear) sev=2;
+  const trueSev=sev;
+  // o árbitro também erra na gravidade
+  if(rnd()<.22) sev=cl(sev+(rnd()<.5?-1:1),0,2);
+
+  const spot=gaveP?V(t.dir>0?F.PEN:F.L-F.PEN,F.W/2):{...c.pos};
+  const label=gaveP?'PÊNALTI':'Falta';
+  say(`Falta de #${o.num} sobre #${c.num}. ${label}.`,t);
+
+  const apply=()=>{
+    if(sev==1) card(o,'Y',clear?'anular ataque':'entrada dura');
+    if(sev==2) card(o,'R',clear?'impedir chance clara de gol':'jogada violenta');
+    if(gaveP) penalty(at); else freeKick(at,spot,'Falta');
+  };
+
+  // ── VAR: só entra em pênalti e cartão vermelho ──
+  const wrongP = (margin>0)!==gaveP && Math.abs(margin)>.30;
+  const wrongC = trueSev!=sev && Math.max(trueSev,sev)==2;
+  if(wrongP||wrongC){
+    startVAR(wrongP?'Revisão — pênalti':'Revisão — cartão vermelho',
+      wrongP?`Contato a ${Math.abs(margin).toFixed(2)} m da linha da área`
+            :`Reavaliando a gravidade da entrada`,
+      ()=>{
+        if(wrongP){
+          const real=margin>0;
+          say(`VAR: decisão alterada — falta ${real?'DENTRO':'FORA'} da área.`,t);
+          if(real){ if(sev==1)card(o,'Y','entrada dura'); if(sev==2)card(o,'R','jogada violenta'); penalty(at); }
+          else    { if(sev==1)card(o,'Y','entrada dura'); if(sev==2)card(o,'R','jogada violenta');
+                    freeKick(at,{...c.pos},'Falta'); }
+        }else{
+          say(`VAR: cartão corrigido para ${trueSev==2?'VERMELHO':'amarelo'}.`,t);
+          if(trueSev==2) card(o,'R','jogada violenta'); else card(o,'Y','entrada dura');
+          if(gaveP) penalty(at); else freeKick(at,spot,'Falta');
+        }
+      });
+  } else apply();
+}
+
+function card(p,color,reason){
+  if(p.sent) return;
+  if(color=='Y'){
+    p.yellow++; stats[p.team.id].yc++;
+    if(p.yellow>=2){ sendOff(p,'segundo amarelo'); return }
+    say(`🟨 Amarelo — #${p.num} (${reason}).`,p.team);
+  } else sendOff(p,reason);
+}
+function sendOff(p,reason){
+  p.sent=true; p.pos=V(-8,-8); p.vel=V(0,0);
+  p.team.on=p.team.on.filter(x=>x!==p);
+  stats[p.team.id].rc++;
+  reshape(p.team);
+  say(`🟥 VERMELHO — #${p.num} (${reason}). ${p.team.name} com ${p.team.on.length}.`,p.team);
+}
+
+function startVAR(title,detail,resolve){
+  varS={t:3.2,title,detail,resolve};
+  say(`📺 VAR analisando: ${title.replace('Revisão — ','')}.`);
+}
+
+/* ═══ BOLAS PARADAS ═══════════════════════════════════════ */
+function taker(t,pos,gkOnly){
+  let k=t.on[0],bd=1e9;
+  for(const p of t.on){
+    if(gkOnly){if(p.role!='GK')continue} else if(p.role=='GK')continue;
+    const d=D(p.pos,pos); if(d<bd){bd=d;k=p}
+  }
+  return k;
+}
+function place(t,pos,label,kind){
+  ball.owner=null;ball.target=null;ball.pen=false;ball.vel=V(0,0);
+  ball.pos={...pos};ball.last=t;clearOff();
+  setPiece={kind,pos:{...pos},taker:taker(t,pos,kind=='meta'),t:DUR[kind],team:t};
+  say(`${label} — ${t.name}.`,t);
+}
+function freeKick(t,pos,label){
+  const p=V(cl(pos.x,1.5,F.L-1.5),cl(pos.y,1.5,F.W-1.5));
+  ball.owner=null;ball.target=null;ball.pen=false;ball.vel=V(0,0);
+  ball.pos={...p};ball.last=t;clearOff();
+  // quem bate: se está em distância de chute, o melhor finalizador perto
+  const near=t.on.filter(x=>x.role!='GK'&&D(x.pos,p)<22);
+  const k=(D(p,oppGoal(t))<32&&near.length)
+    ? near.reduce((a,b)=>a.a.shot>b.a.shot?a:b) : taker(t,p,false);
+  setPiece={kind:'falta',pos:{...p},taker:k,t:DUR.falta,team:t};
+  say(`${label} para ${t.name}.`,t);
+}
+function penalty(t){
+  const spot=V(t.dir>0?F.L-F.PEN:F.PEN,F.W/2);
+  ball.owner=null;ball.target=null;ball.vel=V(0,0);ball.pos={...spot};ball.last=t;clearOff();
+  const k=t.on.filter(x=>x.role!='GK').reduce((a,b)=>a.a.shot>b.a.shot?a:b);
+  setPiece={kind:'penalti',pos:{...spot},taker:k,t:DUR.penalti,team:t};
+  say(`⚪ PÊNALTI para ${t.name}. Bate #${k.num}.`,t);
+}
+function kickoff(t,cel){
+  teams.forEach(tt=>tt.on.forEach(p=>{
+    const h=home(p);p.pos={...h};p.vel=V(0,0);p.tgt={...h};p.cool=0;p.dive=0;
+    if(tt!==t) p.pos.x=tt.dir>0?Math.min(p.pos.x,F.L/2-2):Math.max(p.pos.x,F.L/2+2);
+  }));
+  ball.pos=V(F.L/2,F.W/2);ball.vel=V(0,0);ball.owner=null;ball.target=null;
+  ball.pen=false;ball.last=t;clearOff();
+  setPiece={kind:'saida',pos:V(F.L/2,F.W/2),taker:taker(t,V(F.L/2,F.W/2),false),t:cel?22:DUR.saida,team:t};
+}
+
+/* ═══ CAMADA 1 — FÍSICA ══════════════════════════════════ */
+function step(dt){
+  if(varS){ varS.t-=dt; if(varS.t<=0){const r=varS.resolve;varS=null;r()} return }
+  clock+=dt;
+  for(const t of teams){
+    const np=ball.owner? (ball.owner.team===t?'atk':'def') : (ball.last===t?'atk':'def');
+    if(np!==t.phase){t.phase=np;t.since=0} else t.since+=dt;
+  }
+  if(ball.owner) possCount[ball.owner.team.id]+=dt;
+  const oline=[offsideLine(teams[0]),offsideLine(teams[1])];
+
+  for(const t of teams) for(const p of t.on){
+    p.cool=Math.max(0,p.cool-dt);
+    p.noChase=Math.max(0,p.noChase-dt);
+    p.dt-=dt;
+    if(p.dt<=0){
+      p.dt=.12+rnd()*.14+(1-p.a.vis)*.14;
+      if(ball.owner===p&&!setPiece){const o=decide(p); if(o&&o.u>0)execute(p,o)}
+      else p.tgt=offBall(p);
+    }
+  }
+
+  for(const t of teams) for(const p of t.on){
+    const urgent=ball.owner? (ball.owner.team!==t&&D(p.pos,ball.pos)<25?1:.72) : 1;
+    const vmax=(p.role=='GK'?6.8:5.6+p.a.pace*2.8)*(.72+.28*p.stam)*urgent;
+    // REGRA ATIVA DE LINHA: só limitar o alvo não bastava. Entre duas
+    // decisões (0,26 s a 7 m/s = 1,8 m) a inércia levava o atacante além da
+    // linha. Agora ele se recompõe a cada quadro, como na vida real.
+    if(t.phase=='atk'&&p.role!='GK'&&!setPiece&&ball.owner!==p){
+      const L=oline[t.id]-t.dir*1.3;
+      if((p.tgt.x-L)*t.dir>0) p.tgt=V(L,p.tgt.y);
+      if((p.pos.x-L)*t.dir>0) p.tgt=V(L-t.dir*.8,p.tgt.y);
+    }
+    const dv=V(p.tgt.x-p.pos.x,p.tgt.y-p.pos.y), dd=hyp(dv.x,dv.y);
+    const want=dd<.6?V(0,0):V(dv.x/dd*vmax,dv.y/dd*vmax);
+    const am=(3.4+p.a.acc*3.6)*dt;
+    let ax=want.x-p.vel.x,ay=want.y-p.vel.y,al=hyp(ax,ay);
+    if(al>am){ax*=am/al;ay*=am/al}
+    for(const o of [...teams[0].on,...teams[1].on]){
+      if(o===p)continue; const d=D(p.pos,o.pos);
+      if(d<1.5&&d>.01){ax+=(p.pos.x-o.pos.x)/d*.9;ay+=(p.pos.y-o.pos.y)/d*.9}
+    }
+    p.vel.x+=ax;p.vel.y+=ay;
+    p.pos.x=cl(p.pos.x+p.vel.x*dt,-1,F.L+1);
+    p.pos.y=cl(p.pos.y+p.vel.y*dt,-1,F.W+1);
+    const sp=hyp(p.vel.x,p.vel.y);
+    p.stam=cl(p.stam-(sp>6.5?.0055:.0012)*dt+(sp<2?.004*dt:0),.55,1);
+    if(ball.owner===p){ball.pos=V(p.pos.x+p.vel.x*.13,p.pos.y+p.vel.y*.13);ball.vel={...p.vel}}
+  }
+
+  if(!ball.owner){
+    ball.pos.x+=ball.vel.x*dt; ball.pos.y+=ball.vel.y*dt;
+    const s0=hyp(ball.vel.x,ball.vel.y);
+    if(s0>0){const ns=Math.max(0,s0*(1-.34*dt)-.42*dt);ball.vel.x*=ns/s0;ball.vel.y*=ns/s0}
+    const s=hyp(ball.vel.x,ball.vel.y);
+    if(clock>ball.tExp) ball.target=null;
+    if(!setPiece) for(const t of teams) for(const p of t.on){
+      if(p.cool>0)continue;
+      const exp=ball.target===p;
+      const reach=p.role=='GK'?2.7:(exp?2.0:1.5);
+      if(D(p.pos,ball.pos)>=reach) continue;
+
+      // BLOQUEIO — bola forte não atravessa jogador. Faltava isso: quase
+      // toda finalização chegava limpa ao goleiro (28 defesas por jogo).
+      if(p.role!='GK'&&ball.shot&&D(p.pos,ball.pos)<1.05){
+        ball.vel=V(-ball.vel.x*.28+(rnd()-.5)*9,-ball.vel.y*.28+(rnd()-.5)*9);
+        ball.last=t;ball.target=null;ball.pen=false;p.cool=.22;
+        say(`#${p.num} bloqueia!`,t); return;
+      }
+      if(p.role=='GK'&&s>=17){                          // defesa
+        ball.target=null;ball.last=t;p.dive=0;
+        const pen=ball.pen; ball.pen=false;
+        stats[t.id].sv++;
+        if(!pen&&rnd()<.75){ball.owner=p;p.cool=.45;say('Defesa do goleiro!',t)}
+        else{ball.vel=V(-ball.vel.x*.55+t.dir*6,-ball.vel.y*.3+(rnd()-.5)*16);
+             p.cool=.35;say(pen?'DEFENDEU O PÊNALTI!':'Goleiro espalma — sobra na área.',t)}
+        return;
+      }
+      if(s<(exp?24:17)){
+        // ── IMPEDIMENTO: a posição foi congelada no instante do toque ──
+        if(ball.last===t&&p.off>-90&&p.off>-.6){
+          judgeOffside(p,t); return;
+        }
+        if(ball.last&&ball.last!==t&&s>3) say(`#${p.num} intercepta!`,t);
+        else if(exp) stats[t.id].ok++;
+        if(ball.last!==t) clearOff();
+        ball.owner=p; ball.last=t; ball.vel={...p.vel}; ball.target=null; ball.pen=false; ball.shot=false;
+        p.cool=.18; return;
+      }
+    }
+  } else {
+    const c=ball.owner;
+    for(const o of foe(c.team).on){
+      if(o.role=='GK'||o.cool>0)continue;
+      if(D(o.pos,c.pos)<1.6){
+        const r=challenge(o,c,1/60);
+        if(!r) continue;
+        if(r.k=='win'){
+          ball.owner=null;ball.last=c.team;ball.target=null;clearOff();
+          ball.vel=V((rnd()-.5)*9,(rnd()-.5)*9);
+          c.cool=.5;o.cool=.12;
+          say(`#${o.num} desarma #${c.num}.`,o.team);
+        }else{ foul(o,c,r); }
+        return;
+      }
+    }
+  }
+  rules();
+}
+
+/* ═══ O ÁRBITRO ASSISTENTE ════════════════════════════════
+   Impedimento apertado (<0,45 m): bandeira fica baixa, joga-se a
+   jogada até o fim e o VAR confere se sair gol. É o protocolo real. */
+function judgeOffside(p,t){
+  const m=p.off;                                        // margem verdadeira, em metros
+  if(m>.45){
+    stats[t.id].off++;
+    say(`🚩 Impedimento — #${p.num} (${m.toFixed(2)} m).`,t);
+    freeKick(foe(t),{...p.pos},'Impedimento');
+    return;
+  }
+  pendOff={team:t,player:p,margin:m};                    // marginal → VAR decide depois
+  say(`Bandeira baixa: lance apertado com #${p.num}.`,t);
+  ball.owner=p; ball.last=t; ball.vel={...p.vel}; ball.target=null; p.cool=.18;
+  for(const q of t.on) q.off=-99;
+}
+
+/* ═══ CAMADA 4 — REGRAS ══════════════════════════════════ */
+function rules(){
+  if(setPiece){
+    setPiece.t-=1/60;
+    if(setPiece.kind!='penalti'){ball.pos={...setPiece.pos};ball.vel=V(0,0)}
+    const k=setPiece.taker;
+    if(!k||k.sent){setPiece.taker=taker(setPiece.team,setPiece.pos,false);return}
+    k.tgt={...setPiece.pos};
+    if(setPiece.t<=0&&D(k.pos,setPiece.pos)<2.4){
+      if(setPiece.kind=='penalti') takePenalty();
+      else{ball.owner=k;ball.last=k.team;k.cool=.25;setPiece=null}
+    }
+    return;
+  }
+  const b=ball.pos;
+  if(b.y<0||b.y>F.W){
+    const t=foe(ball.last||teams[0]);
+    place(t,V(cl(b.x,1,F.L-1),b.y<0?.4:F.W-.4),'Lateral','lateral');return;
+  }
+  if(b.x<0||b.x>F.L){
+    const inGoal=Math.abs(b.y-F.W/2)<F.GW/2;
+    const scorer=b.x<0?teams[1]:teams[0];
+    if(inGoal){ goal(scorer); return }
+    const def=b.x<0?teams[0]:teams[1];
+    if(ball.last===def) place(foe(def),V(b.x<0?.6:F.L-.6,b.y<F.W/2?.6:F.W-.6),'Escanteio','escanteio');
+    else place(def,V(b.x<0?6:F.L-6,F.W/2),'Tiro de meta','meta');
+  }
+}
+
+function goal(scorer){
+  // VAR confere impedimento marginal na origem do gol
+  if(pendOff&&pendOff.team===scorer){
+    const m=pendOff.margin, pl=pendOff.player;
+    ball.vel=V(0,0);
+    startVAR('Revisão — impedimento no gol',
+      `Margem medida: ${(Math.abs(m)*100).toFixed(0)} cm ${m>0?'à frente':'atrás'} da linha`,
+      ()=>{
+        if(m>0){
+          stats[scorer.id].off++; pendOff=null;
+          say(`VAR: GOL ANULADO — #${pl.num} impedido por ${(m*100).toFixed(0)} cm.`,scorer);
+          freeKick(foe(scorer),{...pl.pos},'Impedimento');
+        }else{
+          pendOff=null;
+          say(`VAR: confirmado, posição legal por ${(-m*100).toFixed(0)} cm.`,scorer);
+          finishGoal(scorer);
+        }
+      });
+    return;
+  }
+  finishGoal(scorer);
+}
+function finishGoal(scorer){
+  scorer.score++;
+  say(`⚽ GOL do ${scorer.name}! ${teams[0].score}–${teams[1].score}`,scorer);
+  kickoff(foe(scorer),true);
+}
+
+function takePenalty(){
+  const t=setPiece.team, k=setPiece.taker;
+  const gk=foe(t).on.find(x=>x.role=='GK');
+  // resultado sorteado primeiro, e a trajetória é construída para
+  // corresponder — assim a estatística fica correta (~78% de conversão)
+  const scored=rnd()<.58+k.a.shot*.24;
+  const side=rnd()<.5?-1:1;
+  if(gk) gk.dive=scored?-side:side;
+  const y=scored? F.W/2+side*(F.GW/2-.55)
+        : (rnd()<.72? F.W/2+side*(F.GW/2-1.5) : F.W/2+side*(F.GW/2+1.3));
+  k.pos=V(setPiece.pos.x-t.dir*1.0,F.W/2);
+  shootBall(k,V(t.dir>0?F.L:0,y),28);
+  ball.pen=true; ball.shot=true; ball.last=t; stats[t.id].sh++;
+  say(`#${k.num} cobra o pênalti.`,t);
+  setPiece=null;
+  setTimeout(()=>{if(gk)gk.dive=0},0);
+}
+
+function say(txt,t){
+  log.unshift({m:Math.floor(clock/60),s:Math.floor(clock%60),txt,c:t?t.color:null});
+  if(log.length>100)log.pop();
+}
+
+/* ═══ RENDER ══════════════════════════════════════════════ */
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+let SC=1;
+function fit(){const w=cv.clientWidth;SC=w/(F.L+8);cv.width=w*devicePixelRatio;
+  cv.height=(F.W+8)*SC*devicePixelRatio;cv.style.height=(F.W+8)*SC+'px';
+  cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
+addEventListener('resize',fit);
+const X=x=>(x+4)*SC, Y=y=>(y+4)*SC;
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function draw(){
+  const dbg=document.getElementById('dbg').checked;
+  cx.fillStyle=css('--turf');cx.fillRect(0,0,cv.width,cv.height);
+  cx.fillStyle=css('--turf2');
+  for(let i=0;i<10;i+=2)cx.fillRect(X(i*10.5),Y(0),10.5*SC,F.W*SC);
+  cx.strokeStyle=css('--chalk');cx.lineWidth=1.2;
+  const R=(x,y,w,h)=>cx.strokeRect(X(x),Y(y),w*SC,h*SC);
+  R(0,0,F.L,F.W);
+  cx.beginPath();cx.moveTo(X(F.L/2),Y(0));cx.lineTo(X(F.L/2),Y(F.W));cx.stroke();
+  cx.beginPath();cx.arc(X(F.L/2),Y(F.W/2),9.15*SC,0,7);cx.stroke();
+  for(const s of[0,1]){
+    R(s?F.L-F.PD:0,(F.W-F.PW)/2,F.PD,F.PW);
+    R(s?F.L-F.GD:0,(F.W-F.GA)/2,F.GD,F.GA);
+    cx.beginPath();cx.arc(X(s?F.L-F.PEN:F.PEN),Y(F.W/2),.35*SC,0,7);cx.fillStyle=css('--chalk');cx.fill();
+  }
+
+  if(dbg){
+    for(const t of teams){
+      const l=offsideLine(t);
+      cx.strokeStyle=css(t.color)+'55';cx.setLineDash([3,5]);cx.lineWidth=1;
+      cx.beginPath();cx.moveTo(X(l),Y(0));cx.lineTo(X(l),Y(F.W));cx.stroke();cx.setLineDash([]);
+      const pl=t.on.filter(p=>p.role!='GK');
+      if(pl.length){
+        const xs=pl.map(p=>p.pos.x),ys=pl.map(p=>p.pos.y);
+        cx.strokeStyle=css(t.color)+'25';
+        cx.strokeRect(X(Math.min(...xs)),Y(Math.min(...ys)),
+          (Math.max(...xs)-Math.min(...xs))*SC,(Math.max(...ys)-Math.min(...ys))*SC);
+      }
+    }
+    const o=ball.owner;
+    if(o) for(const op of o.opts){
+      if(!op.to||!op.to.pos)continue;
+      cx.strokeStyle=`rgba(138,255,193,${cl(op.u,0,1)*.6})`;cx.lineWidth=1;
+      cx.beginPath();cx.moveTo(X(o.pos.x),Y(o.pos.y));cx.lineTo(X(op.to.pos.x),Y(op.to.pos.y));cx.stroke();
+    }
+    if(setPiece&&setPiece.kind!='saida'){                 // barreira de 9,15 m
+      cx.strokeStyle='#ffffff22';cx.setLineDash([2,4]);
+      cx.beginPath();cx.arc(X(setPiece.pos.x),Y(setPiece.pos.y),F.WALL*SC,0,7);cx.stroke();cx.setLineDash([]);
+    }
+  }
+
+  for(const t of teams){
+    const c=css(t.color);
+    for(const p of t.on){
+      cx.beginPath();cx.arc(X(p.pos.x),Y(p.pos.y),(p.role=='GK'?4.2:4)*SC/4.4,0,7);
+      cx.fillStyle=c;cx.fill();
+      if(ball.owner===p){cx.strokeStyle=css('--ball');cx.lineWidth=2;cx.stroke()}
+      if(p.yellow){cx.fillStyle='#ffd21e';cx.fillRect(X(p.pos.x)+SC*.45,Y(p.pos.y)-SC*.85,SC*.35,SC*.55)}
+      cx.fillStyle='#04080f';cx.font=`600 ${Math.max(7,SC*.95)}px ${css('--mono')}`;
+      cx.textAlign='center';cx.textBaseline='middle';
+      cx.fillText(p.num,X(p.pos.x),Y(p.pos.y)+.5);
+    }
+  }
+  cx.beginPath();cx.arc(X(ball.pos.x),Y(ball.pos.y),Math.max(2.2,SC*.5),0,7);
+  cx.fillStyle=css('--ball');cx.fill();
+
+  if(varS){                                              // faixa do VAR
+    const h=Math.min(64,cv.height/devicePixelRatio*.3), y=(cv.height/devicePixelRatio-h)/2;
+    cx.fillStyle='rgba(6,10,18,.9)';cx.fillRect(0,y,cv.width,h);
+    cx.strokeStyle=css('--ball');cx.lineWidth=2;
+    cx.beginPath();cx.moveTo(0,y);cx.lineTo(cv.width,y);cx.moveTo(0,y+h);cx.lineTo(cv.width,y+h);cx.stroke();
+    cx.textAlign='center';cx.fillStyle=css('--ball');
+    cx.font=`700 ${Math.max(11,SC*1.5)}px ${css('--mono')}`;
+    cx.fillText('◉ VAR  '+varS.title.replace('Revisão — ','').toUpperCase(),cv.width/devicePixelRatio/2,y+h*.4);
+    cx.fillStyle=css('--txt');cx.font=`${Math.max(9,SC*1.1)}px ${css('--mono')}`;
+    cx.fillText(varS.detail,cv.width/devicePixelRatio/2,y+h*.72);
+  }
+}
+
+/* ═══ HUD ═════════════════════════════════════════════════ */
+function hud(){
+  document.getElementById('sh').textContent=teams[0].score;
+  document.getElementById('sa').textContent=teams[1].score;
+  document.getElementById('ck').textContent=
+    String(Math.floor(clock/60)).padStart(2,'0')+':'+String(Math.floor(clock%60)).padStart(2,'0');
+  const tot=possCount[0]+possCount[1]||1;
+  document.getElementById('poss').style.width=(possCount[0]/tot*100)+'%';
+  for(const i of[0,1]){
+    const s=stats[i], sfx=i?'a':'h';
+    document.getElementById('ac'+sfx).textContent=s.att<3?'—':Math.round(s.ok/s.att*100)+'%';
+    document.getElementById('f'+sfx).textContent=s.sh;
+    document.getElementById('fl'+sfx).textContent=s.foul;
+    document.getElementById('oi'+sfx).textContent=s.off;
+  }
+  document.getElementById('ph').textContent=teams[0].phase=='atk'?'com a bola':'sem a bola';
+  document.getElementById('pa').textContent=teams[1].phase=='atk'?'com a bola':'sem a bola';
+
+  // súmula
+  let d='';
+  for(const t of teams) for(const p of t.players){
+    if(!p.yellow&&!p.sent) continue;
+    const y=p.sent?'#ff3b3b':'#ffd21e';
+    d+=`<div class="row"><span><i class="card" style="background:${y}"></i>#${p.num} ${p.role}</span>`+
+       `<b style="color:var(${t.color})">${p.sent?'expulso':'amarelo'}</b></div>`;
+  }
+  document.getElementById('disc').innerHTML=d||
+    `<span style="color:var(--dim)">sem ocorrências · ${teams[0].on.length}v${teams[1].on.length}</span>`;
+
+  const b=document.getElementById('brain'),o=ball.owner;
+  if(varS) b.innerHTML=`<b style="color:var(--ball)">jogo parado — VAR</b>`;
+  else if(!o) b.innerHTML='<span style="color:var(--dim)">bola em disputa</span>';
+  else{
+    let h=`<div class="row"><span>#${o.num} ${o.role}</span><b style="color:var(${o.team.color})">${o.act}</b></div>`;
+    h+=`<div class="row"><span>pressão</span><b>${press(o).toFixed(2)}</b></div>`;
+    h+=`<div class="row"><span>fôlego</span><b>${(o.stam*100|0)}%</b></div><div style="margin-top:8px">`;
+    o.opts.forEach((op,i)=>{
+      h+=`<div style="margin-bottom:5px"><div style="display:flex;justify-content:space-between">
+      <span style="color:${i?'var(--dim)':'#fff'}">${op.k}</span><span>${op.u.toFixed(2)}</span></div>
+      <div class="u ${i?'':'sel'}"><i style="width:${cl(op.u,0,1.9)/1.9*100}%"></i></div></div>`;
+    });
+    b.innerHTML=h+'</div>';
+  }
+  document.getElementById('log').innerHTML=log.slice(0,45).map(e=>
+    `<div><span class="t">${String(e.m).padStart(2,'0')}:${String(e.s).padStart(2,'0')}</span> `+
+    `<em style="font-style:normal;color:${e.c?`var(${e.c})`:'var(--txt)'}">${e.txt}</em></div>`).join('');
+}
+
+/* ═══ LOOP ════════════════════════════════════════════════ */
+let acc=0,prev=performance.now();
+function frame(now){
+  const real=Math.min((now-prev)/1000,.1);prev=now;
+  if(running){
+    acc+=real*parseFloat(document.getElementById('sp').value)*6;
+    let n=0; while(acc>=1/60&&n++<20){step(1/60);acc-=1/60}
+  }
+  draw();hud();requestAnimationFrame(frame);
+}
+document.getElementById('pp').onclick=e=>{running=!running;e.target.textContent=running?'Pausar':'Continuar'};
+document.getElementById('rs').onclick=()=>reset(+document.getElementById('seed').value||1);
+fit();reset(7);requestAnimationFrame(frame);
+</script>

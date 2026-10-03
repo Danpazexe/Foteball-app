@@ -80,11 +80,6 @@ import {
   type EstadoPartidaAoVivo,
 } from '../../engine/simulation/matchSimulator';
 import type {PosicoesElenco} from '../../engine/simulation/lances';
-import type {
-  FimLanceMinuto,
-  JogadorEmCampoLance,
-} from '../../engine/simulation/reconstruirLanceMinuto';
-import {coordenadaDoTitular} from '../../engine/tactics/geometria';
 import {confrontoDoClube} from '../../engine/season/copaEngine';
 import {hashString} from '../../engine/simulation/rng';
 import {
@@ -120,8 +115,6 @@ import {
   type JogoAoVivo,
   type PlacarAoVivo,
 } from './jogosAoVivo';
-import {derivarMundoRadar, type MundoRadar} from './mundoRadar';
-import RadarPartida from './RadarPartida';
 import {CabecalhoTabelaAoVivo, LinhaRodada, LinhaTabela} from './TabelaAoVivo';
 import {LinhaEvento, type ItemTimeline, type LadoLance} from './Timeline';
 
@@ -275,14 +268,6 @@ function MatchSimulation(): React.JSX.Element | null {
   const bannerGolSeqRef = useRef(0);
   const [bannerGol, setBannerGol] = useState<DadosBannerGol | null>(null);
   const fecharBannerGol = useCallback(() => setBannerGol(null), []);
-  // RADAR: MUNDO derivado do último minuto simulado (`derivarMundoRadar` é a
-  // ÚNICA fonte derivada — 22 pontos, lance, dots, ícones e destaques). A tela
-  // não calcula nada do radar: só orquestra a entrada e espelha a saída na UI.
-  const [mundoRadar, setMundoRadar] = useState<MundoRadar | null>(null);
-  // RADAR: fim do lance anterior — continuidade minuto a minuto (mesma posse
-  // segue com o portador; posse trocada vira desarme visível; gol reseta
-  // para a saída de bola).
-  const fimLanceRef = useRef<FimLanceMinuto | null>(null);
 
   // Prepara a partida do usuário (sem simular nada ainda).
   useEffect(() => {
@@ -560,9 +545,6 @@ function MatchSimulation(): React.JSX.Element | null {
     // Cartaz de gol do lote: só eventos que mudam o placar viram banner; se o
     // lote tiver mais de um gol (pulo de tempo), o último é o que fica.
     let bannerNovo: DadosBannerGol | null = null;
-    // Mundo do radar do lote (o do minuto mais recente vence; se o minuto
-    // mais recente não render lance, o último lance visível do lote fica).
-    let mundoUltimo: MundoRadar | null = null;
     const criarItem = (ev: EventoPartida): ItemTimeline => {
       const ehCasa = ev.timeId === fixture.timeCasa;
       const nomeAutor = nomesRef.current[ev.jogadorId] ?? 'Jogador';
@@ -678,68 +660,9 @@ function MatchSimulation(): React.JSX.Element | null {
       } catch {
         break;
       }
-      const chutesAntesDoMinuto = estado.chutes.length;
       const novos = simularMinuto(estado, ctx);
       minutoSimuladoRef.current = proximoMinuto;
 
-      // RADAR: worldstate ÚNICO do minuto via `derivarMundoRadar` — a tela só
-      // monta a ENTRADA (fatos reais da engine: escalações vigentes com âncora
-      // por coordenadaDoTitular — a mesma fonte da tela de tática —, momentum,
-      // ledger de chutes, eventos e o fim do lance anterior) e o derivador
-      // devolve TUDO que o RadarPartida desenha. Funções PURAS fora da
-      // simulação — não consomem nenhum RNG do estado, então a paridade com o
-      // motor headless fica intocada. Em lote (pulo de tempo), o último mundo
-      // é o que fica.
-      const formacaoCasaViva =
-        estado.formacoesAoVivo.get(clubeCasa.id) ?? clubeCasa.formacaoAtual;
-      const formacaoForaViva =
-        estado.formacoesAoVivo.get(clubeFora.id) ?? clubeFora.formacaoAtual;
-      const ancorasDe = (
-        formacao: Formacao | null | undefined,
-      ): Map<string, {x: number; y: number}> =>
-        new Map(
-          (formacao?.titulares ?? []).map(titular => [
-            titular.jogadorId,
-            coordenadaDoTitular(titular),
-          ]),
-        );
-      const emCampoLance = (
-        jogadoresEmCampo: Player[],
-        ancoras: Map<string, {x: number; y: number}>,
-      ): JogadorEmCampoLance[] =>
-        jogadoresEmCampo.map(j => ({
-          id: j.id,
-          posicao: j.posicaoPrincipal,
-          ancora: ancoras.get(j.id),
-        }));
-      const mundoDoMinuto = derivarMundoRadar({
-        seedPartida: seedRef.current,
-        minuto: proximoMinuto,
-        momentum: [...estado.estatisticas.momentumPorMinuto],
-        posseCasa: calcularPossePartida(estado).casa,
-        timeCasaId: fixture.timeCasa,
-        timeForaId: fixture.timeFora,
-        ladoUsuario: usuarioEhCasa ? 'casa' : 'fora',
-        emCampoCasa: emCampoLance(ctx.jogadoresCasa, ancorasDe(formacaoCasaViva)),
-        emCampoFora: emCampoLance(ctx.jogadoresFora, ancorasDe(formacaoForaViva)),
-        eventos: estado.eventos,
-        chutes: estado.chutes,
-        eventosDoMinuto: novos,
-        chutesDoMinuto: estado.chutes.slice(chutesAntesDoMinuto),
-        lanceAnterior: fimLanceRef.current,
-        posicoes: posicoesRef.current,
-        jogadoresUsuario: usuarioEhCasa ? ctx.jogadoresCasa : ctx.jogadoresFora,
-      });
-      // Minuto raro sem lance (elenco degenerado): o lance anterior do lote
-      // continua em cena — os demais campos do mundo seguem os mais novos.
-      const lanceAnteriorDoLote: typeof mundoDoMinuto.lance =
-        mundoUltimo !== null ? mundoUltimo.lance : null;
-      mundoUltimo =
-        mundoDoMinuto.lance === null && lanceAnteriorDoLote !== null
-          ? {...mundoDoMinuto, lance: lanceAnteriorDoLote}
-          : mundoDoMinuto;
-      // Continuidade: o próximo minuto parte de onde este lance terminou.
-      fimLanceRef.current = mundoDoMinuto.fim;
       for (const ev of novos) {
         novosItens.push(criarItem(ev));
         const doUsuario =
@@ -862,16 +785,6 @@ function MatchSimulation(): React.JSX.Element | null {
     }
     if (bannerNovo) {
       setBannerGol(bannerNovo);
-    }
-    if (mundoUltimo !== null) {
-      const mundoNovo = mundoUltimo;
-      // Mesmo comportamento de antes: um minuto sem lance não apaga o último
-      // lance visível (os 22 pontos e o resto do mundo sempre avançam).
-      setMundoRadar(prev =>
-        mundoNovo.lance === null && prev !== null && prev.lance !== null
-          ? {...mundoNovo, lance: prev.lance}
-          : mundoNovo,
-      );
     }
     setPlacar({casa: estado.placarCasa, fora: estado.placarFora});
     setPosse(calcularPossePartida(estado));
@@ -1315,31 +1228,6 @@ function MatchSimulation(): React.JSX.Element | null {
             ) : null}
           </View>
         ) : null}
-
-        {/* RADAR DA PARTIDA: mini-campo vivo a partida inteira — lance do
-            minuto com jogadores reais (bola tocando entre eles), chutes no
-            ponto do ledger, replay do gol e faixa sutil de pressão. Acima do
-            feed (não cobre o BannerGol, que flutua sobre o feed) e colapsável
-            para não competir com o CTA principal. */}
-        <RadarPartida
-          partidaId={fixture.id}
-          timeCasaId={fixture.timeCasa}
-          timeForaId={fixture.timeFora}
-          siglaCasa={siglaCasa}
-          siglaFora={siglaFora}
-          nomeCasa={nomeCasaRef.current}
-          nomeFora={nomeForaRef.current}
-          corCasa={corCasa}
-          corFora={corFora}
-          minuto={minuto}
-          posseCasa={posseCasa}
-          chutes={estadoRef.current?.chutes ?? []}
-          eventos={eventosAoVivo}
-          mundo={mundoRadar}
-          titularesCasa={titularesRef.current.casa}
-          titularesFora={titularesRef.current.fora}
-          posicoes={posicoesRef.current}
-        />
 
         {temOutrosJogos ? (
           <Tabs

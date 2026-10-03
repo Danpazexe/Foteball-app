@@ -369,7 +369,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.pazconcept.foteball";
+				PRODUCT_BUNDLE_IDENTIFIER = com.pazconcept.foteball;
 				PRODUCT_NAME = FOTEBALL;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -398,7 +398,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.pazconcept.foteball";
+				PRODUCT_BUNDLE_IDENTIFIER = com.pazconcept.foteball;
 				PRODUCT_NAME = FOTEBALL;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;

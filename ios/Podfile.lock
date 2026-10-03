@@ -1517,6 +1517,30 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-skia (2.9.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - React-NativeModulesApple (0.86.0):
     - hermes-engine
     - React-callinvoker
@@ -1936,7 +1960,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - RNReanimated (4.4.1):
+  - RNReanimated (4.4.2):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -1958,11 +1982,11 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
-    - RNReanimated/apple (= 4.4.1)
-    - RNReanimated/common (= 4.4.1)
+    - RNReanimated/apple (= 4.4.2)
+    - RNReanimated/common (= 4.4.2)
     - RNWorklets
     - Yoga
-  - RNReanimated/apple (4.4.1):
+  - RNReanimated/apple (4.4.2):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -1986,7 +2010,7 @@ PODS:
     - ReactNativeDependencies
     - RNWorklets
     - Yoga
-  - RNReanimated/common (4.4.1):
+  - RNReanimated/common (4.4.2):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2240,6 +2264,7 @@ DEPENDENCIES:
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - React-mutationobservernativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
+  - "react-native-skia (from `../node_modules/@shopify/react-native-skia`)"
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-networking (from `../node_modules/react-native/ReactCommon/react/networking`)
   - React-oscompat (from `../node_modules/react-native/ReactCommon/oscompat`)
@@ -2367,6 +2392,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
+  react-native-skia:
+    :path: "../node_modules/@shopify/react-native-skia"
   React-NativeModulesApple:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios"
   React-networking:
@@ -2494,6 +2521,7 @@ SPEC CHECKSUMS:
   React-microtasksnativemodule: 2eb3f49d0d8e77b5343455eccd057010b8d38b6b
   React-mutationobservernativemodule: f0a0d5ae9b51caf7becbeabf836d716cfedb6bf2
   react-native-safe-area-context: fb5c8ee9f6dd62ef710611b3d370c501f42a4ac0
+  react-native-skia: 5f142e826da600a970897be2538c5b9980bd3519
   React-NativeModulesApple: a092d89b58f635ebfab88048b0eda9fb516819fd
   React-networking: 968bbbe73590149feb1e72b2af4f6a68e4796ece
   React-oscompat: 0b72a7e926954a0415ccd83e0748b6561fe45367
@@ -2530,7 +2558,7 @@ SPEC CHECKSUMS:
   ReactCommon: d5c1bb4427bf51c443de5926aac332c89ddd9363
   ReactNativeDependencies: fa0a54b3f5319ae0e3b9aff32bfee7a424b88e66
   RNGestureHandler: 1fac5cb6e78ca6836f4c0b9beba31b10490c70ce
-  RNReanimated: 80a8d6e0854c9dddedc054efbce746294a8d3a3b
+  RNReanimated: b349cd990904bbf609d5ee488e63c40f0ddbef53
   RNScreens: 991cc417cd396602a6cf59a42139e5a9d91462a9
   RNSound: 79fb9d0b4a20de49e65e657b563982443c1ed21b
   RNSVG: 6cae8d4082913be2eb43eaec2a456222c42195ed
