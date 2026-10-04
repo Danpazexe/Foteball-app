@@ -72,6 +72,39 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+/**
+ * Assinatura de release — NUNCA com a debug key (ela é pública).
+ *
+ * Os valores vêm, nesta ordem, de:
+ *   1. android/keystore.properties (local, ignorado pelo git);
+ *   2. propriedades do Gradle (-P... ou ~/.gradle/gradle.properties, fora do repo);
+ *   3. variáveis de ambiente (usado no CI, a partir dos secrets do GitHub).
+ *
+ * Chaves: FOTEBALL_RELEASE_STORE_FILE, FOTEBALL_RELEASE_STORE_PASSWORD,
+ *         FOTEBALL_RELEASE_KEY_ALIAS, FOTEBALL_RELEASE_KEY_PASSWORD.
+ *
+ * Se faltar qualquer uma, qualquer task de release falha com erro claro
+ * (não cai para a debug key nem gera APK sem assinatura). Ver README.
+ */
+def releaseSigningProps = new Properties()
+def releaseSigningFile = rootProject.file('keystore.properties')
+if (releaseSigningFile.exists()) {
+    releaseSigningFile.withInputStream { releaseSigningProps.load(it) }
+}
+def releaseSigningValue = { String name ->
+    def value = releaseSigningProps.getProperty(name) ?: project.findProperty(name) ?: System.getenv(name)
+    return value ? value.toString() : null
+}
+def releaseStorePath = releaseSigningValue('FOTEBALL_RELEASE_STORE_FILE')
+def releaseStoreFile = releaseStorePath ? rootProject.file(releaseStorePath) : null
+def releaseSigningMissing = []
+if (!releaseStoreFile) releaseSigningMissing << 'FOTEBALL_RELEASE_STORE_FILE'
+else if (!releaseStoreFile.exists()) releaseSigningMissing << "FOTEBALL_RELEASE_STORE_FILE (arquivo não encontrado: ${releaseStoreFile})"
+['FOTEBALL_RELEASE_STORE_PASSWORD', 'FOTEBALL_RELEASE_KEY_ALIAS', 'FOTEBALL_RELEASE_KEY_PASSWORD'].each {
+    if (!releaseSigningValue(it)) releaseSigningMissing << it
+}
+def releaseSigningReady = releaseSigningMissing.isEmpty()
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -94,10 +127,19 @@ android {
     }
     signingConfigs {
         debug {
+            // Só para builds de debug locais. Esta chave é pública (template RN).
             storeFile file('debug.keystore')
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
+        }
+        if (releaseSigningReady) {
+            release {
+                storeFile releaseStoreFile
+                storePassword releaseSigningValue('FOTEBALL_RELEASE_STORE_PASSWORD')
+                keyAlias releaseSigningValue('FOTEBALL_RELEASE_KEY_ALIAS')
+                keyPassword releaseSigningValue('FOTEBALL_RELEASE_KEY_PASSWORD')
+            }
         }
     }
     buildTypes {
@@ -105,12 +147,27 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Keystore de release fora do repo (ver bloco no topo e README).
+            // Sem ela, o build de release falha — nunca usa a debug key.
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
+    }
+}
+
+// Falha cedo (antes de compilar) se alguma task de release foi pedida sem a
+// keystore de release configurada. Builds de debug não são afetados.
+gradle.taskGraph.whenReady { graph ->
+    def pediuRelease = graph.allTasks.any { it.project == project && it.name.contains('Release') }
+    if (pediuRelease && !releaseSigningReady) {
+        throw new GradleException(
+            "Assinatura de release não configurada. Faltando: ${releaseSigningMissing.join(', ')}.\n" +
+            "Configure android/keystore.properties (local), ~/.gradle/gradle.properties ou as variáveis de ambiente.\n" +
+            "O build de release NÃO usa a debug key. Veja a seção 'Assinatura de release' do README."
+        )
     }
 }
 

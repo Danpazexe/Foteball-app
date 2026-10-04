@@ -90,3 +90,7 @@ game_audio.ogg
 mock de tela/
 ChatGPT Image*.png
 exec-*.png
+
+# Assinatura de release (nunca versionar)
+*.jks
+android/keystore.properties
