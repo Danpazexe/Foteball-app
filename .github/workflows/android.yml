@@ -8,9 +8,11 @@ name: Android APK
 #     debug NÃO empacota o JS — só serve pra rodar ligado no Metro em dev).
 #   • Por tag de versão: `git tag v0.1.0 && git push origin v0.1.0` (sempre release).
 #
-# Assinatura: debug e release usam a debug key do projeto (android/app/debug.keystore),
-# então NÃO é preciso configurar segredos. Para distribuir de verdade, troque por uma
-# release keystore guardada como secret (ver README).
+# Assinatura: o build de RELEASE (push na main, tags e disparo manual "release") é
+# assinado com a keystore de release vinda dos secrets do repositório:
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+# Se algum secret faltar, o job FALHA — nunca cai para a debug key (que é pública).
+# Só o build de debug manual usa android/app/debug.keystore. Ver README.
 #
 # Segurança: actions de terceiros pinadas por SHA de commit completo (a tag no
 # comentário é só referência humana), checkout sem credenciais persistidas e
@@ -119,9 +121,45 @@ jobs:
             "build-tools;${ANDROID_BUILD_TOOLS}" \
             "ndk;${ANDROID_NDK}"
 
+      # Release: decodifica a keystore dos secrets num arquivo temporário do runner.
+      # Falha com erro claro se algum secret estiver ausente ou inválido.
+      - name: 🔐 Preparar keystore de release
+        id: keystore
+        if: steps.vars.outputs.build_type == 'release'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          FALTANDO=()
+          [ -n "${KEYSTORE_BASE64}" ]   || FALTANDO+=("ANDROID_KEYSTORE_BASE64")
+          [ -n "${KEYSTORE_PASSWORD}" ] || FALTANDO+=("ANDROID_KEYSTORE_PASSWORD")
+          [ -n "${KEY_ALIAS}" ]         || FALTANDO+=("ANDROID_KEY_ALIAS")
+          [ -n "${KEY_PASSWORD}" ]      || FALTANDO+=("ANDROID_KEY_PASSWORD")
+          if [ "${#FALTANDO[@]}" -gt 0 ]; then
+            echo "::error title=Assinatura de release não configurada::Secrets ausentes: ${FALTANDO[*]}. O build de release não usa a debug key. Cadastre-os em Settings → Secrets and variables → Actions (ver README, seção 'Assinatura de release')."
+            exit 1
+          fi
+          KS="${RUNNER_TEMP}/foteball-release.keystore"
+          umask 077
+          printf '%s' "${KEYSTORE_BASE64}" | tr -d '\r\n ' | base64 --decode > "${KS}"
+          if ! keytool -list -keystore "${KS}" -storepass:env KEYSTORE_PASSWORD -alias "${KEY_ALIAS}" >/dev/null 2>&1; then
+            echo "::error title=Keystore de release inválida::Não foi possível abrir a keystore com ANDROID_KEYSTORE_PASSWORD e o alias ANDROID_KEY_ALIAS. Confira os secrets."
+            exit 1
+          fi
+          echo "path=${KS}" >> "$GITHUB_OUTPUT"
+
       - name: 🏗️ Build do APK (${{ steps.vars.outputs.gradle_task }})
         id: build
         working-directory: android
+        env:
+          # Vazios no build de debug; no release, lidos pelo android/app/build.gradle.
+          FOTEBALL_RELEASE_STORE_FILE: ${{ steps.keystore.outputs.path }}
+          FOTEBALL_RELEASE_STORE_PASSWORD: ${{ steps.vars.outputs.build_type == 'release' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          FOTEBALL_RELEASE_KEY_ALIAS: ${{ steps.vars.outputs.build_type == 'release' && secrets.ANDROID_KEY_ALIAS || '' }}
+          FOTEBALL_RELEASE_KEY_PASSWORD: ${{ steps.vars.outputs.build_type == 'release' && secrets.ANDROID_KEY_PASSWORD || '' }}
         run: |
           set -euo pipefail
           chmod +x ./gradlew
@@ -149,6 +187,16 @@ jobs:
           fi
           DEST="foteball-${{ steps.vars.outputs.version }}.apk"
           cp "$SRC" "$DEST"
+          # Trava de segurança: APK de release nunca pode sair com a debug key pública.
+          if [ "${{ steps.vars.outputs.build_type }}" = "release" ]; then
+            APKSIGNER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/${ANDROID_BUILD_TOOLS}/apksigner"
+            CERTS="$("$APKSIGNER" verify --print-certs "$DEST")"
+            if echo "$CERTS" | grep -q "CN=Android Debug"; then
+              echo "::error::APK de release assinado com a debug key — abortando."
+              exit 1
+            fi
+            echo "$CERTS" | grep -E "Signer #1 certificate (DN|SHA-256)" || true
+          fi
           echo "path=$DEST"                     >> "$GITHUB_OUTPUT"
           echo "size=$(du -h "$DEST" | cut -f1)" >> "$GITHUB_OUTPUT"
 
@@ -200,6 +248,10 @@ jobs:
             --data-urlencode chat_id="${TG_CHAT}" \
             --data-urlencode text="${TEXTO}" >/dev/null \
             && echo "Link enviado ao Telegram."
+
+      - name: 🧹 Apagar keystore temporária
+        if: always() && steps.keystore.outputs.path != ''
+        run: rm -f "${{ steps.keystore.outputs.path }}"
 
       - name: 📋 Resumo do build
         if: success()
