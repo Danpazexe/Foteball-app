@@ -90,3 +90,7 @@ game_audio.ogg
 mock de tela/
 ChatGPT Image*.png
 exec-*.png
+
+# Variáveis de ambiente
+.env
+.env.*
