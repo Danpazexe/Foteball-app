@@ -1,10 +1,19 @@
-# ⚽ FOTEBALL
+<div align="center">
 
-> Jogo de **gerência de futebol brasileiro** estilo Brasfoot, feito em React Native.
+<img src="src/assets/brand/logo.png" alt="Escudo do FOTEBALL" width="128">
 
-[![CI](https://github.com/Danpazexe/FOTEBALL/actions/workflows/ci.yml/badge.svg)](https://github.com/Danpazexe/FOTEBALL/actions/workflows/ci.yml)
+# FOTEBALL
+
+**Jogo de gerência de futebol brasileiro estilo Brasfoot, feito em React Native.**
+
+[![CI](https://github.com/Danpazexe/Foteball-app/actions/workflows/ci.yml/badge.svg)](https://github.com/Danpazexe/Foteball-app/actions/workflows/ci.yml)
 ![React Native](https://img.shields.io/badge/React%20Native-0.86-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8%20strict-3178C6?logo=typescript)
+![Plataformas](https://img.shields.io/badge/plataformas-Android%20%7C%20iOS-3DDC84)
+
+[Funcionalidades](#-funcionalidades) · [Competições](#-competições) · [Stack](#-stack) · [Como rodar](#-começando) · [Documentação](#-documentação)
+
+</div>
 
 Assuma um clube, dispute o **Brasileirão** (Séries A a D), monte o time a cada
 partida, negocie no mercado e busque o acesso — fugindo do rebaixamento.
@@ -27,6 +36,22 @@ partida, negocie no mercado e busque o acesso — fugindo do rebaixamento.
   atômica com janelas, finanças simétricas e reparo de formação).
 - **Calendário** round-robin (turno e returno) com tabela de classificação.
 - **Progressão** — moral, evolução de jogadores e finanças do clube.
+
+## 🏆 Competições
+
+<p align="center">
+  <img src="src/assets/brasileiraoA.png" alt="Brasileirão Série A" width="72">
+  <img src="src/assets/brasileiraoB.png" alt="Brasileirão Série B" width="72">
+  <img src="src/assets/brasileiraoC.png" alt="Brasileirão Série C" width="72">
+  <img src="src/assets/brasileiraoD.png" alt="Brasileirão Série D" width="72">
+  <img src="src/assets/copaDoBrasil.png" alt="Copa do Brasil" width="72">
+  <img src="src/assets/primeraArgentina.png" alt="Primera División (Argentina)" width="72">
+  <img src="src/assets/premierLeague.png" alt="Premier League" width="72">
+  <img src="src/assets/championship.png" alt="Championship" width="72">
+</p>
+
+Brasileirão Séries A a D e Copa do Brasil; Primera División (Argentina);
+Premier League e Championship (Inglaterra).
 
 ## 🧱 Stack
 
@@ -128,6 +153,18 @@ para diagnóstico.
 > Para distribuir de verdade, gere uma *release keystore*, guarde-a como **secret**
 > do repositório e ajuste a `signingConfig` em `android/app/build.gradle`.
 
+## 📚 Documentação
+
+| Documento | Conteúdo |
+|-----------|----------|
+| [`FOTEBALL.md`](docs/FOTEBALL.md) | Documento mestre do projeto |
+| [`FOTEBALL_ARQUITETURA.md`](docs/FOTEBALL_ARQUITETURA.md) | Arquitetura técnica |
+| [`FOTEBALL_REGRAS_E_SISTEMAS.md`](docs/FOTEBALL_REGRAS_E_SISTEMAS.md) | Regras e sistemas de jogo |
+| [`FOTEBALL_DADOS_JOGADORES.md`](docs/FOTEBALL_DADOS_JOGADORES.md) | Atributos, overall e potencial dos jogadores |
+| [`FOTEBALL_UI_PREMIUM.md`](docs/FOTEBALL_UI_PREMIUM.md) | Direção visual da interface |
+| [`docs/adr`](docs/adr) · [`docs/engine`](docs/engine) | Decisões de arquitetura (ADRs) |
+
 ## 📄 Licença
 
-Projeto privado/pessoal — todos os direitos reservados.
+Projeto pessoal de Daniel Paz ([PazConcept](https://www.pazconcept.com.br)) — todos os direitos reservados.
+O código é público para consulta; não há licença de uso ou redistribuição.
