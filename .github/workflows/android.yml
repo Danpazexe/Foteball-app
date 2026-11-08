@@ -107,13 +107,14 @@ jobs:
       - name: ⚙️ Setup Gradle (cache)
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
 
-      - name: ⚙️ Setup Android SDK
-        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
-
       - name: 📦 Instalar pacotes do SDK (plataforma ${{ env.ANDROID_PLATFORM }}, NDK ${{ env.ANDROID_NDK }})
         run: |
           set -euo pipefail
-          sdkmanager --install \
+          # O runner ubuntu já traz o Android SDK; a action setup-android quebrou ao
+          # pedir o pacote "tools", removido das cmdline-tools 16.
+          SDKM="$(ls -d "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n1)"
+          yes | "$SDKM" --licenses >/dev/null || true
+          "$SDKM" --install \
             "platform-tools" \
             "platforms;${ANDROID_PLATFORM}" \
             "build-tools;${ANDROID_BUILD_TOOLS}" \
